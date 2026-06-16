@@ -1903,7 +1903,7 @@ class TaskScheduler:
         recipient = None
         try:
             from routes.email_helpers import _get_email_config
-            cfg = _get_email_config() or {}
+            cfg = _get_email_config(owner=task.owner or "") or {}
             recipient = cfg.get("from_address") or None
         except Exception as _e:
             logger.debug(f"_deliver_via_mcp: email config lookup failed: {_e}")
@@ -1932,7 +1932,7 @@ class TaskScheduler:
                 "set an email From address in Settings or give the task an owner email."
             )
         try:
-            mcp_result = await mcp.call_tool(tool_name, args)
+            mcp_result = await mcp.call_tool(tool_name, args, owner=task.owner)
             stderr = mcp_result.get("stderr", "")
             stdout = mcp_result.get("stdout", "")
             body_len = len(result or "")

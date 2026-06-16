@@ -23,6 +23,7 @@ import os.path
 from pathlib import Path
 from datetime import datetime, timedelta
 import uuid
+from contextvars import ContextVar
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -54,7 +55,20 @@ def _uid_fetch_rows(data) -> list:
 # inbox; None resolves to the default row. Falls back to env vars / settings.json
 # flat keys when no DB row matches (legacy single-account behaviour).
 
-_ACCOUNT_CACHE: dict = {}  # key = normalized account selector -> config dict
+_ACCOUNT_CACHE: dict = {}  # key = (normalized owner, normalized account selector) -> config dict
+_OWNER_CONTEXT: ContextVar[str] = ContextVar("email_mcp_owner", default="")
+_OWNER_ARG = "_odysseus_owner"
+
+
+def _current_owner() -> str:
+    return (_OWNER_CONTEXT.get() or "").strip()
+
+
+def _owner_from_arguments(arguments: dict | None) -> str:
+    if not isinstance(arguments, dict):
+        return ""
+    owner = arguments.pop(_OWNER_ARG, "") or arguments.pop("odysseus_owner", "")
+    return str(owner or "").strip()
 
 
 def _clean_header_value(value) -> str:
@@ -101,7 +115,7 @@ def _default_document_owner() -> str | None:
     but the document library is owner-filtered. Stamp drafts to the configured
     single/default admin so assistant-created email drafts are visible.
     """
-    owner = os.environ.get("ODYSSEUS_DOCUMENT_OWNER", "").strip()
+    owner = _current_owner() or os.environ.get("ODYSSEUS_DOCUMENT_OWNER", "").strip()
     if owner:
         return owner
     try:
@@ -121,9 +135,10 @@ def _default_document_owner() -> str | None:
         return None
 
 
-def _list_accounts_raw() -> list:
+def _list_accounts_raw(owner: str | None = None) -> list:
     """Return list of dicts from the email_accounts table. Empty list if table
     missing or empty. Never raises."""
+    owner = (owner if owner is not None else _current_owner()).strip()
     path = _db_path()
     if not path.exists():
         return []
@@ -131,14 +146,24 @@ def _list_accounts_raw() -> list:
         conn = sqlite3.connect(str(path))
         conn.row_factory = sqlite3.Row
         columns = {r[1] for r in conn.execute("PRAGMA table_info(email_accounts)").fetchall()}
+        owner_select = "owner" if "owner" in columns else "'' AS owner"
         smtp_security_select = "smtp_security" if "smtp_security" in columns else "'' AS smtp_security"
+        where = ["enabled = 1"]
+        params = []
+        if owner and "owner" in columns:
+            where.append(
+                "(lower(owner) = lower(?) OR "
+                "((owner IS NULL OR owner = '') AND "
+                "(lower(imap_user) = lower(?) OR lower(from_address) = lower(?))))"
+            )
+            params.extend([owner, owner, owner])
         rows = conn.execute(f"""
-            SELECT id, name, is_default, enabled,
+            SELECT id, {owner_select}, name, is_default, enabled,
                    imap_host, imap_port, imap_user, imap_password, imap_starttls,
                    smtp_host, smtp_port, {smtp_security_select}, smtp_user, smtp_password, from_address
-            FROM email_accounts WHERE enabled = 1
+            FROM email_accounts WHERE {' AND '.join(where)}
             ORDER BY is_default DESC, created_at ASC
-        """).fetchall()
+        """, params).fetchall()
         conn.close()
         return [dict(r) for r in rows]
     except sqlite3.OperationalError:
@@ -147,11 +172,11 @@ def _list_accounts_raw() -> list:
         return []
 
 
-def _resolve_account(selector: str | None) -> dict | None:
+def _resolve_account(selector: str | None, owner: str | None = None) -> dict | None:
     """Given a selector (None = default, or a name/user/id string), return the
     matching row or None. Matching is case-insensitive substring on name +
     imap_user + from_address, plus exact id match."""
-    rows = _list_accounts_raw()
+    rows = _list_accounts_raw(owner=owner)
     if not rows:
         return None
     if not selector:
@@ -186,7 +211,7 @@ def _resolve_account(selector: str | None) -> dict | None:
     return None
 
 
-def _load_config(account: str | None = None) -> dict:
+def _load_config(account: str | None = None, owner: str | None = None) -> dict:
     """Return the full config dict for the requested account (or default).
 
     Resolution order per-field:
@@ -194,7 +219,9 @@ def _load_config(account: str | None = None) -> dict:
       2. env vars + settings.json flat keys (legacy)
       3. hardcoded fallbacks (localhost:31143 etc.)
     """
-    cache_key = (account or "").strip().lower() or "__default__"
+    owner_raw = (owner if owner is not None else _current_owner()).strip()
+    owner_key = owner_raw.lower()
+    cache_key = (owner_key, (account or "").strip().lower() or "__default__")
     if cache_key in _ACCOUNT_CACHE:
         return _ACCOUNT_CACHE[cache_key]
 
@@ -223,8 +250,8 @@ def _load_config(account: str | None = None) -> dict:
         "account_name": None,
     }
 
-    rows = _list_accounts_raw()
-    row = _resolve_account(account)
+    rows = _list_accounts_raw(owner=owner_raw)
+    row = _resolve_account(account, owner=owner_raw)
     if account and rows and not row:
         available = ", ".join(
             f"{r.get('name') or r.get('imap_user')} <{r.get('imap_user') or r.get('from_address') or '?'}>"
@@ -953,7 +980,7 @@ def _stash_agent_draft(*, to, subject, body, in_reply_to=None, references=None,
             now,
             account or None,
             "agent_draft",
-            "",
+            _current_owner(),
         ))
         conn.commit()
         conn.close()
@@ -1925,6 +1952,8 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    arguments = dict(arguments or {})
+    _owner_token = _OWNER_CONTEXT.set(_owner_from_arguments(arguments))
     try:
         if name == "list_email_accounts":
             rows = _list_accounts_raw()
@@ -2283,6 +2312,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     except Exception as e:
         return [TextContent(type="text", text=f"Error: {e}")]
+    finally:
+        _OWNER_CONTEXT.reset(_owner_token)
 
 
 # ── Main ──

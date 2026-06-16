@@ -429,7 +429,7 @@ class McpManager:
         finally:
             db.close()
 
-    async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
+    async def call_tool(self, qualified_name: str, arguments: Dict, owner: Optional[str] = None) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).
 
         Returns a result dict compatible with agent_tools format.
@@ -440,6 +440,9 @@ class McpManager:
 
         server_id = parts[1]
         tool_name = parts[2]
+        arguments = dict(arguments or {})
+        if owner and server_id == "email":
+            arguments["_odysseus_owner"] = owner
 
         session = self._sessions.get(server_id)
         if not session:
