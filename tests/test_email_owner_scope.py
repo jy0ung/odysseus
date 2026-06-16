@@ -472,3 +472,59 @@ def test_scheduled_poller_resolves_config_with_row_owner(tmp_path, monkeypatch):
     assert result == {"sent": ["sched-1"], "failed": []}
     assert ("config", "acct-alice", "alice") in calls
     assert ("imap", "acct-alice", "alice") in calls
+
+
+@pytest.mark.asyncio
+async def test_agent_email_drafts_do_not_share_blank_owner_rows(tmp_path, monkeypatch):
+    import routes.email_helpers as email_helpers
+    import routes.email_routes as email_routes
+
+    db_path = tmp_path / "scheduled_emails.db"
+    monkeypatch.setattr(email_helpers, "SCHEDULED_DB", db_path)
+    monkeypatch.setattr(email_routes, "SCHEDULED_DB", db_path)
+    email_helpers._init_scheduled_db()
+
+    conn = sqlite3.connect(db_path)
+    for sid, owner, subject in (
+        ("draft-alice", "alice", "Alice"),
+        ("draft-bob", "bob", "Bob"),
+        ("draft-legacy", "", "Legacy"),
+    ):
+        conn.execute(
+            """
+            INSERT INTO scheduled_emails
+            (id, to_addr, subject, body, send_at, created_at, status, owner)
+            VALUES (?, ?, ?, ?, ?, ?, 'agent_draft', ?)
+            """,
+            (
+                sid,
+                "recipient@example.com",
+                subject,
+                f"{subject} body",
+                "9999-12-31T00:00:00",
+                "2026-01-01T00:00:00",
+                owner,
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+    router = email_routes.setup_email_routes()
+    list_pending = _route_endpoint(router, "/api/email/pending", "GET")
+    approve = _route_endpoint(router, "/api/email/pending/{sid}/approve", "POST")
+    cancel = _route_endpoint(router, "/api/email/pending/{sid}", "DELETE")
+
+    alice_pending = await list_pending(owner="alice")
+    assert [row["id"] for row in alice_pending["pending"]] == ["draft-alice"]
+
+    assert await approve("draft-legacy", owner="alice") == {
+        "success": False,
+        "error": "Draft not found or already handled",
+    }
+    assert await cancel("draft-bob", owner="alice") == {
+        "success": False,
+        "error": "Draft not found or already handled",
+    }
+
+    legacy_pending = await list_pending(owner="")
+    assert [row["id"] for row in legacy_pending["pending"]] == ["draft-legacy"]

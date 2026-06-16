@@ -2165,12 +2165,13 @@ def setup_email_routes():
         try:
             conn = sqlite3.connect(SCHEDULED_DB)
             conn.row_factory = sqlite3.Row
-            # The MCP server can't easily set owner, so it stores '' — fall
-            # back to those rows in addition to the caller's owner.
+            # MCP now stamps the caller owner. Only ownerless/single-user mode
+            # should see legacy blank-owner drafts.
+            owner_clause = "owner = ?" if owner else "(owner = ? OR owner = '')"
             rows = conn.execute(
-                """SELECT id, to_addr, subject, body, created_at, account_id
+                f"""SELECT id, to_addr, subject, body, created_at, account_id
                    FROM scheduled_emails
-                   WHERE status = 'agent_draft' AND (owner = ? OR owner = '')
+                   WHERE status = 'agent_draft' AND {owner_clause}
                    ORDER BY created_at DESC""",
                 (owner or "",),
             ).fetchall()
@@ -2188,10 +2189,11 @@ def setup_email_routes():
         import sqlite3
         try:
             conn = sqlite3.connect(SCHEDULED_DB)
+            owner_clause = "owner = ?" if owner else "(owner = ? OR owner = '')"
             cur = conn.execute(
-                """UPDATE scheduled_emails
+                f"""UPDATE scheduled_emails
                    SET status = 'pending', send_at = ?
-                   WHERE id = ? AND status = 'agent_draft' AND (owner = ? OR owner = '')""",
+                   WHERE id = ? AND status = 'agent_draft' AND {owner_clause}""",
                 (datetime.utcnow().isoformat(), sid, owner or ""),
             )
             conn.commit()
@@ -2210,9 +2212,10 @@ def setup_email_routes():
         import sqlite3
         try:
             conn = sqlite3.connect(SCHEDULED_DB)
+            owner_clause = "owner = ?" if owner else "(owner = ? OR owner = '')"
             cur = conn.execute(
-                """UPDATE scheduled_emails SET status = 'cancelled'
-                   WHERE id = ? AND status = 'agent_draft' AND (owner = ? OR owner = '')""",
+                f"""UPDATE scheduled_emails SET status = 'cancelled'
+                   WHERE id = ? AND status = 'agent_draft' AND {owner_clause}""",
                 (sid, owner or ""),
             )
             conn.commit()
