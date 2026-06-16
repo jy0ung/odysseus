@@ -1152,6 +1152,23 @@ async def _startup_event():
 
     logger.info("Application startup complete")
 
+
+async def _cancel_retained_startup_tasks():
+    tasks = list(getattr(app.state, "_startup_tasks", []) or [])
+    if not tasks:
+        return
+    current = asyncio.current_task()
+    pending = [task for task in tasks if task is not current and not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        results = await asyncio.gather(*pending, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                logger.debug("Startup task ended during shutdown with error: %r", result)
+    app.state._startup_tasks = []
+
+
 async def _shutdown_event():
     logger.info("Application shutting down...")
     if upload_cleanup_task:
@@ -1160,6 +1177,7 @@ async def _shutdown_event():
             await upload_cleanup_task
         except asyncio.CancelledError:
             pass
+    await _cancel_retained_startup_tasks()
     # Stop task scheduler (no-op if it never started under the gate)
     try:
         await task_scheduler.stop()
