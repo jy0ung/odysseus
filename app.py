@@ -465,7 +465,12 @@ async def serve_generated_image(filename: str, request: Request):
     except HTTPException:
         raise
     except Exception:
-        pass
+        logging.getLogger(__name__).warning(
+            "Generated image ownership check failed for %s; denying access",
+            filename,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=404, detail="Image not found")
     ext = filename.rsplit('.', 1)[-1].lower()
     mime = {
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",

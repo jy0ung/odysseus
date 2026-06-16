@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -70,3 +71,28 @@ def test_generated_image_route_uses_confining_resolver():
     assert 'Path("data/generated_images") / filename' not in source
     assert "resolve_generated_image_path(filename)" in source
     assert "headers=GENERATED_IMAGE_HEADERS" in source
+
+
+@pytest.mark.asyncio
+async def test_generated_image_route_fails_closed_when_owner_lookup_errors(monkeypatch, tmp_path):
+    import app as app_mod
+    import core.database as cdb
+    import src.auth_helpers as auth_helpers
+
+    filename = "c" * 12 + ".png"
+    image_path = tmp_path / filename
+    image_path.write_bytes(b"png")
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+
+    monkeypatch.setattr(app_mod, "resolve_generated_image_path", lambda _filename: image_path)
+    monkeypatch.setattr(auth_helpers, "get_current_user", lambda _request: "alice")
+
+    def _db_unavailable():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(cdb, "SessionLocal", _db_unavailable)
+
+    with pytest.raises(HTTPException) as exc:
+        await app_mod.serve_generated_image(filename, request)
+
+    assert exc.value.status_code == 404
