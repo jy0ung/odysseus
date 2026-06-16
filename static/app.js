@@ -5,6 +5,7 @@
 import Storage from './js/storage.js';
 import uiModule from './js/ui.js';
 import workspaceModule from './js/workspace.js';
+import studioWorkspaceModule from './js/studioWorkspace.js';
 import fileHandlerModule from './js/fileHandler.js';
 import modelsModule from './js/models.js';
 import ragModule from './js/rag.js';
@@ -3378,6 +3379,7 @@ function startOdysseusApp() {
   chatModule.init(API_BASE);
   chatModule.initListeners();
   groupModule.init(API_BASE);
+  studioWorkspaceModule.init(API_BASE);
   // Initialize compare module
   if (compareModule) {
     compareModule.init(API_BASE);

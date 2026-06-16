@@ -540,6 +540,72 @@ class CrewMember(TimestampMixin, Base):
                            backref=backref("crew_member", uselist=False))
 
 
+class StudioWorkspace(TimestampMixin, Base):
+    """A multi-agent product studio seeded from a rough idea."""
+    __tablename__ = "studio_workspaces"
+
+    id                 = Column(String, primary_key=True, index=True)
+    owner              = Column(String, nullable=True, index=True)
+    name               = Column(String, nullable=False)
+    preset             = Column(String, nullable=False, default="game_dev")
+    idea               = Column(Text, nullable=False, default="")
+    status             = Column(String, nullable=False, default="draft")
+    phase              = Column(String, nullable=False, default="intake")
+    summary            = Column(Text, nullable=False, default="")
+    current_focus      = Column(String, nullable=True)
+    workspace_metadata = Column(Text, nullable=True)
+
+    agents = relationship("StudioWorkspaceAgent", back_populates="workspace", cascade="all, delete-orphan")
+    artifacts = relationship("StudioWorkspaceArtifact", back_populates="workspace", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('ix_studio_workspaces_owner_updated', 'owner', 'updated_at'),
+    )
+
+
+class StudioWorkspaceAgent(TimestampMixin, Base):
+    """Links a studio role to a CrewMember persona."""
+    __tablename__ = "studio_workspace_agents"
+
+    id             = Column(String, primary_key=True, index=True)
+    workspace_id   = Column(String, ForeignKey("studio_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    crew_member_id = Column(String, ForeignKey("crew_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner          = Column(String, nullable=True, index=True)
+    role_key       = Column(String, nullable=False)
+    role_name      = Column(String, nullable=False)
+    mission        = Column(Text, nullable=False, default="")
+    sort_order     = Column(Integer, default=0)
+    status         = Column(String, nullable=False, default="active")
+
+    workspace = relationship("StudioWorkspace", back_populates="agents")
+    crew_member = relationship("CrewMember", foreign_keys=[crew_member_id])
+
+    __table_args__ = (
+        Index('ix_studio_workspace_agents_workspace_order', 'workspace_id', 'sort_order'),
+    )
+
+
+class StudioWorkspaceArtifact(TimestampMixin, Base):
+    """Documents and deliverables produced for a studio workspace."""
+    __tablename__ = "studio_workspace_artifacts"
+
+    id           = Column(String, primary_key=True, index=True)
+    workspace_id = Column(String, ForeignKey("studio_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_id  = Column(String, ForeignKey("documents.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner        = Column(String, nullable=True, index=True)
+    kind         = Column(String, nullable=False)
+    title        = Column(String, nullable=False)
+    sort_order   = Column(Integer, default=0)
+    status       = Column(String, nullable=False, default="draft")
+
+    workspace = relationship("StudioWorkspace", back_populates="artifacts")
+    document = relationship("Document", foreign_keys=[document_id])
+
+    __table_args__ = (
+        Index('ix_studio_workspace_artifacts_workspace_order', 'workspace_id', 'sort_order'),
+    )
+
+
 class ScheduledTask(TimestampMixin, Base):
     """A recurring or one-off task — LLM-powered or direct action, time or event triggered."""
     __tablename__ = "scheduled_tasks"
@@ -1235,7 +1301,8 @@ def _migrate_assign_legacy_owner():
             "calendars", "calendar_events", "integrations",
             "scheduled_tasks", "task_runs", "crew_members",
             "gallery_albums", "gallery_people", "user_tool_data",
-            "api_tokens", "webhooks",
+            "api_tokens", "webhooks", "studio_workspaces",
+            "studio_workspace_agents", "studio_workspace_artifacts",
         ]
         for table in tables:
             try:

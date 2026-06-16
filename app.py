@@ -712,6 +712,10 @@ app.include_router(setup_cookbook_routes())
 from routes.workspace_routes import setup_workspace_routes
 app.include_router(setup_workspace_routes())
 
+# AI studio workspaces: product/team planning surface distinct from filesystem workspaces.
+from routes.studio_workspace_routes import setup_studio_workspace_routes
+app.include_router(setup_studio_workspace_routes())
+
 # Hardware model fitting (cookbook "What Fits?" tab)
 from routes.hwfit_routes import setup_hwfit_routes
 app.include_router(setup_hwfit_routes())
