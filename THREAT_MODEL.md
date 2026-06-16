@@ -72,10 +72,10 @@ External content that reaches the LLM is treated as untrusted via `src/prompt_se
 
 These are open, acknowledged, and contributor help is welcome:
 
-1. **No shell/filesystem sandbox.** The agent `bash` and `read_file`/`write_file` tools run as the app process user with no network egress filtering or filesystem confinement. A successful prompt-injection reaching a shell-enabled admin session can make outbound requests to internal services. See #1058 for the sandbox proposal.
+1. **No shell sandbox or network egress filtering.** The agent `bash`/`python` tools still run as the app process user, and a shell-enabled admin session can make outbound requests to internal services. File tools are now path-confined in `src/tool_execution.py`, but that is not a process sandbox and does not constrain shell commands. See #1058 for the broader sandbox proposal.
 
-2. **SSRF via `/api/v1/chat` `base_url` parameter.** A chat-scoped API token can supply an arbitrary `base_url`; the server forwards the LLM request to that host without validating the scheme or address. PR #1039 fixes this.
+2. **Configured endpoints remain trusted infrastructure.** Direct `/api/v1/chat` `base_url` input is validated against local/private targets, but stored model endpoints are operator-controlled and may intentionally point at local services such as Ollama, vLLM, or LM Studio. Treat endpoint management as an admin capability and keep internal services off public networks.
 
-3. **`src/search/` partial consolidation.** `src.search.core` and `src.search.providers` correctly alias `services.search` via `sys.modules` replacement. `analytics`, `cache`, `content`, `query`, and `ranking` are still independent copies that can drift. The SSRF regression tests in `tests/test_webhook_ssrf_resilience.py` test `src.webhook_manager` directly (separate from search), so the safety net there is intact. See #1058.
+3. **Search compatibility shims still exist.** `src/search/*` modules now forward to `services.search.*`, so the old partial-consolidation drift risk is closed. The compatibility layer remains so older imports continue to work; new code should import from `services.search` directly.
 
 4. **Token scopes are coarse.** There is no way to grant a session a subset of the owning user's privileges. Companion/mobile tokens carry either `chat` or `admin` scope with no per-capability granularity.
