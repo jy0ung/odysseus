@@ -1,4 +1,4 @@
-# app.py — slim orchestrator
+# app.py - slim orchestrator
 import mimetypes
 import os
 
@@ -28,7 +28,7 @@ if os.name == "nt":
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 from dotenv import load_dotenv
-# encoding="utf-8-sig" tolerates a UTF-8 BOM in .env — a common Windows gotcha
+# encoding="utf-8-sig" tolerates a UTF-8 BOM in .env - a common Windows gotcha
 # when the file is saved from Notepad. Without this, the first key parses as
 # "﻿AUTH_ENABLED" instead of "AUTH_ENABLED", so AUTH_ENABLED=false (etc.)
 # is silently ignored and the user is unexpectedly forced to log in (issue #142).
@@ -137,7 +137,7 @@ app.add_middleware(
 # uncompressed on every cold load. gzip cuts CSS/JS/HTML by ~75-85% on the wire
 # with no behavioural change. Starlette's GZipMiddleware excludes
 # `text/event-stream` by default, so the SSE streams (chat, shell, research,
-# model-probe — all served with media_type="text/event-stream") are never
+# model-probe - all served with media_type="text/event-stream") are never
 # compressed or buffered; only complete bodies over minimum_size are. The
 # security-header middleware composes cleanly on top.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
@@ -166,7 +166,7 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/model-endpoints", # /probe sub-route also iterates models
     "/api/cookbook/setup",  # remote pacman/apt installs
     "/api/upload",          # large files
-    "/api/image",           # diffusion proxies (inpaint/harmonize/upscale/etc.) — own 120s httpx timeout
+    "/api/image",           # diffusion proxies (inpaint/harmonize/upscale/etc.) - own 120s httpx timeout
     "/api/memory/audit",    # retains own 120s LLM inactivity timeout
 )
 
@@ -215,7 +215,7 @@ if AUTH_ENABLED:
     # Dynamic paths whose own handler proves identity via a path-embedded
     # secret instead of the session/bearer auth. The route handler at
     # routes/task_routes.py validates the per-task `webhook_token` itself
-    # and returns 404 on mismatch, so the path is the credential — the
+    # and returns 404 on mismatch, so the path is the credential - the
     # UI labels these URLs "no auth needed" precisely because external
     # callers (Zapier, n8n, curl) can't supply a session cookie. Without
     # this exemption AuthMiddleware rejects every POST with 401 before
@@ -232,10 +232,10 @@ if AUTH_ENABLED:
             return True
         return any(p.match(path) for p in AUTH_EXEMPT_PATTERNS)
 
-    # In-memory token cache: prefix → list[(token_id, token_hash, owner, scopes)]. The DB
+    # In-memory token cache: prefix -> list[(token_id, token_hash, owner, scopes)]. The DB
     # query was running on every API-bearer request and scanning bcrypt
     # checks linearly. With this cache, we hit the DB only when the cache
-    # version bumps (token created/revoked) — see _token_cache_invalidate
+    # version bumps (token created/revoked) - see _token_cache_invalidate
     # in app.state, called by routes/api_token_routes.
     _token_cache: dict = {}
     _token_cache_lock = _asyncio.Lock()
@@ -249,7 +249,7 @@ if AUTH_ENABLED:
     app.state._token_cache_dirty = True
 
     def _refresh_token_cache():
-        """Rebuild the prefix→[(id,hash)] map from the DB."""
+        """Rebuild the prefix -> [(id, hash)] map from the DB."""
         from collections import defaultdict
         new_map = defaultdict(list)
         db = SessionLocal()
@@ -341,7 +341,7 @@ if AUTH_ENABLED:
             if LOCALHOST_BYPASS and _is_trusted_loopback(request):
                 return await call_next(request)
             if not auth_manager.is_configured:
-                # No users yet — redirect to login for first-time setup
+                # No users yet - redirect to login for first-time setup
                 if not path.startswith("/api/"):
                     return RedirectResponse(url="/login", status_code=302)
                 return JSONResponse(status_code=401, content={"error": "Setup required"})
@@ -398,7 +398,7 @@ if AUTH_ENABLED:
                         return await call_next(request)
                 except Exception:
                     logger.warning("API token auth error", exc_info=False)
-                # Invalid bearer token — reject immediately
+                # Invalid bearer token - reject immediately
                 return JSONResponse(status_code=401, content={"error": "Invalid API token"})
 
             # --- Cookie-based session auth ---
@@ -426,7 +426,7 @@ class _RevalidatingStatic(StaticFiles):
     """Serve static assets normally, but force the browser to REVALIDATE
     source files (.js/.css/.html) on every load instead of serving a stale
     copy from disk cache. The app ships raw ES modules with no build step or
-    versioned URLs, so browsers were caching modules across deploys — a code
+    versioned URLs, so browsers were caching modules across deploys - a code
     change wouldn't appear without a manual hard-refresh. `no-cache` keeps the
     cached bytes but requires a conditional request; unchanged files still
     return a cheap 304 (ETag/Last-Modified are preserved)."""
@@ -456,8 +456,8 @@ async def serve_generated_image(filename: str, request: Request):
             _db = _SL()
             try:
                 _row = _db.query(_GI).filter(_GI.filename == filename).first()
-                # Generated-but-not-yet-imported images have no row → allow.
-                # Row exists with a different owner → 404 (don't confirm existence).
+                # Generated-but-not-yet-imported images have no row: allow.
+                # Row exists with a different owner: 404 (don't confirm existence).
                 if _row is not None and _row.owner and _row.owner != _user:
                     raise HTTPException(status_code=404, detail="Image not found")
             finally:
@@ -478,7 +478,7 @@ async def serve_generated_image(filename: str, request: Request):
         "mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm",
         "mkv": "video/x-matroska", "m4v": "video/mp4",
     }.get(ext, "application/octet-stream")
-    # Generated-image filenames are content hashes → the bytes for a given
+    # Generated-image filenames are content hashes, so the bytes for a given
     # filename never change. Cache them hard so the gallery doesn't
     # re-download every full-size image each time it's opened. `immutable`
     # tells the browser it never needs to revalidate within the max-age.
@@ -494,7 +494,7 @@ init_youtube()
 
 # ========= RAG (vector document RAG) =========
 # VectorRAG (ChromaDB-backed personal-document semantic search). Initialized
-# lazily via get_rag_manager() — returns None if ChromaDB isn't reachable
+# lazily via get_rag_manager() - returns None if ChromaDB isn't reachable
 # (no server running on the configured host:port), in which case personal-doc
 # routes return a clean 503 instead of busy-retrying every request.
 #
@@ -582,7 +582,7 @@ upload_router, upload_cleanup_func = setup_upload_routes(upload_handler)
 app.include_router(upload_router)
 upload_cleanup_task = None
 
-# Emoji SVG proxy (same-origin, lazy-cached Twemoji) — lets the chat render
+# Emoji SVG proxy (same-origin, lazy-cached Twemoji) - lets the chat render
 # emojis as flat SVG instead of system color glyphs.
 from routes.emoji_routes import setup_emoji_routes
 app.include_router(setup_emoji_routes())
@@ -592,7 +592,7 @@ from routes.session_routes import setup_session_routes
 session_config = {"REQUEST_TIMEOUT": REQUEST_TIMEOUT, "OPENAI_API_KEY": OPENAI_API_KEY, "SESSIONS_FILE": SESSIONS_FILE}
 app.include_router(setup_session_routes(session_manager, session_config, webhook_manager=webhook_manager))
 
-# Admin Danger Zone wipes (Settings → System → Danger Zone)
+# Admin Danger Zone wipes (Settings > System > Danger Zone)
 from routes.admin_wipe_routes import setup_admin_wipe_routes
 app.include_router(setup_admin_wipe_routes(session_manager))
 
@@ -768,7 +768,7 @@ from routes.email_routes import setup_email_routes
 email_router = setup_email_routes()
 app.include_router(email_router)
 
-# Codex integration — HTTP surface for the Codex plugin/MCP bridge. Reuses
+# Codex integration - HTTP surface for the Codex plugin/MCP bridge. Reuses
 # api_token scopes (todos:read|write, email:read|draft|send) so external
 # Codex sessions can only touch the data the user explicitly allowed. Mounted
 # AFTER email so the codex_routes can borrow the email router for shared
@@ -820,7 +820,7 @@ async def serve_notes(request: Request):
 async def serve_calendar(request: Request):
     return await serve_index(request)
 
-# Per-tool deep-link routes — all serve the same SPA, the JS auto-opens
+# Per-tool deep-link routes - all serve the same SPA, the JS auto-opens
 # the matching modal based on window.location.pathname. Each route also
 # gets a unique favicon + page title via inline script in index.html so
 # bookmarks render with tool-specific icons.
@@ -870,7 +870,7 @@ async def health_check() -> Dict[str, str]:
 
 @app.get("/api/ready")
 async def readiness_check() -> JSONResponse:
-    """Readiness / integrity self-check — DB, data dir, local-first storage.
+    """Readiness / integrity self-check - DB, data dir, local-first storage.
 
     Unlike /api/health (liveness), this returns 503 unless every critical
     subsystem is whole, so an orchestrator can gate traffic on real readiness.
@@ -904,10 +904,10 @@ async def runtime_info() -> Dict[str, object]:
 @asynccontextmanager
 async def _lifespan(app):
     """Modern lifespan context manager replacing deprecated @app.on_event."""
-    # ── STARTUP ──
+    # STARTUP
     await _startup_event()
     yield
-    # ── SHUTDOWN ──
+    # SHUTDOWN
     await _shutdown_event()
 
 app.router.lifespan_context = _lifespan
@@ -917,7 +917,7 @@ async def _startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
     webhook_manager.set_loop(asyncio.get_running_loop())
-    # Wipe any leftover incognito sessions from previous process — they're
+    # Wipe any leftover incognito sessions from previous process - they're
     # ephemeral by design and must not survive a restart.
     try:
         from core.database import SessionLocal as _SL, Session as _DbSess, ChatMessage as _DbMsg
@@ -941,7 +941,7 @@ async def _startup_event():
     if upload_cleanup_func:
         upload_cleanup_task = asyncio.create_task(upload_cleanup_func())
     # Always-on monitor that auto-continues the agent when a background bash
-    # job (#!bg) finishes — re-invokes the turn with the job output.
+    # job (#!bg) finishes - re-invokes the turn with the job output.
     try:
         from src.bg_monitor import start_bg_monitor
         _startup_tasks.append(start_bg_monitor())
@@ -968,7 +968,7 @@ async def _startup_event():
     # embedding model + opening ChromaDB + indexing the built-in tools is a
     # one-time ~1-3s cost that otherwise lands on the user's FIRST message
     # (showing up as a big `tool_selection` time). Doing it here makes the
-    # first turn as fast as subsequent ones (warm embed ≈ a few ms).
+    # first turn as fast as subsequent ones (warm embed is a few ms).
     async def _warmup_tool_index():
         try:
             from src.tool_index import get_tool_index
@@ -1085,7 +1085,7 @@ async def _startup_event():
     except Exception as e:
         logger.debug(f"Skill owner backfill skipped: {e}")
 
-    # Start scheduled task runner — skip when running under a cron-driven
+    # Start scheduled task runner - skip when running under a cron-driven
     # deployment where an external worker drives task firing. Mirrors
     # `ODYSSEUS_INPROCESS_POLLERS` from the email pollers.
     _tasks_inprocess = os.environ.get("ODYSSEUS_INPROCESS_TASKS", "1").strip().lower()
@@ -1096,7 +1096,7 @@ async def _startup_event():
             "In-process task scheduler disabled (ODYSSEUS_INPROCESS_TASKS=0); "
             "drive task firing externally (e.g. cron)."
         )
-    # Periodic null-owner sweep — re-runs the legacy-owner assignment hourly
+    # Periodic null-owner sweep - re-runs the legacy-owner assignment hourly
     # so any data created while auth was disabled / localhost-bypassed gets
     # claimed by the admin instead of staying world-visible (M19).
     async def _null_owner_sweep_loop():
@@ -1111,7 +1111,7 @@ async def _startup_event():
 
     _startup_tasks.append(asyncio.create_task(_null_owner_sweep_loop()))
 
-    # Nightly skill audit — at ~02:00 local, test + judge a batch of the
+    # Nightly skill audit - at ~02:00 local, test + judge a batch of the
     # least-recently-checked skills, auto-fixing/escalating weak ones (never
     # deletes). Rotates through the library so each night covers different
     # skills. Gated by the `skill_audit_nightly` setting (default on); hour via
@@ -1141,7 +1141,7 @@ async def _startup_event():
 
     _startup_tasks.append(asyncio.create_task(_skill_audit_nightly_loop()))
 
-    # Cookbook serve lifecycle — kills scheduler-launched serves whose
+    # Cookbook serve lifecycle - kills scheduler-launched serves whose
     # window-end has passed. Paired with the cookbook_serve builtin
     # action; both are no-ops unless a scheduled task actually launches
     # something with end_after_min set. Removing this line + the

@@ -1,4 +1,4 @@
-"""Search package — drop-in replacement for the monolithic search_engine module."""
+"""Search package compatibility layer."""
 
 from .core import (
     comprehensive_web_search,
