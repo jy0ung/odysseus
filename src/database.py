@@ -24,6 +24,7 @@ from core.database import (  # explicit re-exports for IDE/type-checker visibili
     StudioWorkspace,
     StudioWorkspaceAgent,
     StudioWorkspaceArtifact,
+    StudioWorkspaceWorkItem,
     ScheduledTask,
     TaskRun,
     Memory,

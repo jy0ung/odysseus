@@ -606,6 +606,29 @@ class StudioWorkspaceArtifact(TimestampMixin, Base):
     )
 
 
+class StudioWorkspaceWorkItem(TimestampMixin, Base):
+    """A production task owned by a studio role."""
+    __tablename__ = "studio_workspace_work_items"
+
+    id                  = Column(String, primary_key=True, index=True)
+    workspace_id        = Column(String, ForeignKey("studio_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner               = Column(String, nullable=True, index=True)
+    role_key            = Column(String, nullable=False)
+    role_name           = Column(String, nullable=False)
+    title               = Column(String, nullable=False)
+    description         = Column(Text, nullable=False, default="")
+    acceptance_criteria = Column(Text, nullable=True)
+    priority            = Column(String, nullable=False, default="medium")
+    status              = Column(String, nullable=False, default="todo")
+    sort_order          = Column(Integer, default=0)
+
+    workspace = relationship("StudioWorkspace", backref=backref("work_items", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        Index('ix_studio_workspace_work_items_workspace_status', 'workspace_id', 'status', 'sort_order'),
+    )
+
+
 class ScheduledTask(TimestampMixin, Base):
     """A recurring or one-off task — LLM-powered or direct action, time or event triggered."""
     __tablename__ = "scheduled_tasks"
@@ -1303,6 +1326,7 @@ def _migrate_assign_legacy_owner():
             "gallery_albums", "gallery_people", "user_tool_data",
             "api_tokens", "webhooks", "studio_workspaces",
             "studio_workspace_agents", "studio_workspace_artifacts",
+            "studio_workspace_work_items",
         ]
         for table in tables:
             try:

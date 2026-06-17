@@ -6,6 +6,7 @@
     powershell -ExecutionPolicy Bypass -File .\Start-Odysseus-WSL.ps1
     powershell -ExecutionPolicy Bypass -File .\Start-Odysseus-WSL.ps1 -Mode docker
     powershell -ExecutionPolicy Bypass -File .\Start-Odysseus-WSL.ps1 -Distro Ubuntu -WslPath /home/me/odysseus
+    powershell -ExecutionPolicy Bypass -File .\Start-Odysseus-WSL.ps1 -Foreground
 
   Mode "auto" uses an existing Docker Compose deployment when one is already
   present, otherwise starts the app from the WSL virtualenv.
@@ -17,7 +18,9 @@ param(
     [string]$WslPath = "",
     [int]$Port = 7000,
     [string]$BindHost = "127.0.0.1",
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Foreground,
+    [int]$StartupTimeoutSeconds = 120
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,7 +65,8 @@ $scriptPath = Quote-Bash (($WslPath.TrimEnd("/") + "/scripts/start-wsl.sh") -rep
 $quotedRepo = Quote-Bash $WslPath
 $quotedBind = Quote-Bash $BindHost
 $quotedMode = Quote-Bash $Mode
-$bashCommand = "cd $quotedRepo && bash $scriptPath --mode $quotedMode --bind $quotedBind --port $Port"
+$runMode = if ($Foreground) { "--foreground" } else { "--detach" }
+$bashCommand = "cd $quotedRepo && bash $scriptPath --mode $quotedMode --bind $quotedBind --port $Port $runMode"
 
 Write-Host ""
 Write-Host "Starting Odysseus in WSL..." -ForegroundColor Cyan
@@ -76,9 +80,38 @@ if ($Distro.Trim()) {
 }
 $launchArgs += @("-e", "bash", "-lc", $bashCommand)
 
-Start-Process -FilePath "wsl.exe" -ArgumentList $launchArgs -WindowStyle Normal
+if ($Foreground) {
+    Start-Process -FilePath "wsl.exe" -ArgumentList $launchArgs -WindowStyle Normal
+} else {
+    & wsl.exe @launchArgs
+    if ($LASTEXITCODE -ne 0) {
+        Fail "WSL startup failed. Check logs/odysseus-wsl.log from WSL for details."
+    }
+}
 
 if (-not $NoBrowser) {
-    Start-Sleep -Seconds 4
+    if (-not $Foreground) {
+        $url = "http://localhost:{0}" -f $Port
+        $deadline = (Get-Date).AddSeconds($StartupTimeoutSeconds)
+        $ready = $false
+        Write-Host ""
+        Write-Host "Waiting for Odysseus to accept connections..." -ForegroundColor Cyan
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 3
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                    $ready = $true
+                    break
+                }
+            } catch {
+                Start-Sleep -Seconds 2
+            }
+        }
+        if (-not $ready) {
+            Write-Host ("Odysseus is still starting. Open {0} in a minute, or check WSL logs/odysseus-wsl.log." -f $url) -ForegroundColor Yellow
+        }
+    } else {
+        Start-Sleep -Seconds 4
+    }
     Start-Process ("http://localhost:{0}" -f $Port)
 }
