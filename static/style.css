@@ -38220,6 +38220,18 @@ body.theme-frosted .modal {
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 18px 60px rgba(0,0,0,0.45));
+}
+
+.studio-setup-header {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.studio-setup-header h4 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .studio-setup-body {
@@ -38233,6 +38245,8 @@ body.theme-frosted .modal {
   display: grid;
   gap: 10px;
   padding: 12px;
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 
 .studio-setup-section h5,
@@ -38267,6 +38281,22 @@ body.theme-frosted .modal {
   opacity: 0.8;
 }
 
+.studio-setup-field .settings-select {
+  width: 100%;
+  min-width: 0;
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+
+.studio-setup-field .settings-select:focus {
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 72%, var(--border));
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, var(--red)) 18%, transparent);
+}
+
 .studio-setup-span-2 {
   grid-column: 1 / -1;
 }
@@ -38277,13 +38307,13 @@ body.theme-frosted .modal {
   font: inherit;
 }
 
-.studio-role-options {
+.studio-setup-role-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.studio-role-option {
+.studio-setup-role-card {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   gap: 8px;
@@ -38295,22 +38325,27 @@ body.theme-frosted .modal {
   cursor: pointer;
 }
 
-.studio-role-option input {
+.studio-setup-role-card:hover {
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent, var(--red)) 8%, transparent);
+}
+
+.studio-setup-role-card input {
   margin-top: 2px;
   accent-color: var(--accent, var(--red));
 }
 
-.studio-role-option strong,
-.studio-role-option small {
+.studio-setup-role-card strong,
+.studio-setup-role-card small {
   display: block;
 }
 
-.studio-role-option strong {
+.studio-setup-role-card strong {
   font-size: 12px;
   line-height: 1.25;
 }
 
-.studio-role-option small {
+.studio-setup-role-card small {
   margin-top: 3px;
   color: color-mix(in srgb, var(--fg) 58%, transparent);
   font-size: 11px;
@@ -38331,7 +38366,7 @@ body.theme-frosted .modal {
   opacity: 0.8;
 }
 
-.studio-setup-footer {
+.studio-setup-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -38353,7 +38388,7 @@ body.theme-frosted .modal {
     grid-template-columns: 1fr 1fr;
   }
 
-  .studio-role-options,
+  .studio-setup-role-options,
   .studio-setup-grid {
     grid-template-columns: 1fr;
   }

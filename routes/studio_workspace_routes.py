@@ -177,14 +177,90 @@ def _metadata_text(value, default: str) -> str:
     return cleaned or default
 
 
-def _metadata_roles(value) -> Optional[list[str]]:
+def _role_token(value) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
+
+
+def _known_studio_roles() -> list[dict]:
+    roles_by_key = {}
+    for preset in PRESETS.values():
+        for role in preset["roles"]:
+            roles_by_key.setdefault(role["key"], role)
+    return list(roles_by_key.values())
+
+
+def _agent_roles(agents) -> list[dict]:
+    return [
+        {
+            "key": agent.role_key,
+            "name": agent.role_name,
+            "avatar": None,
+        }
+        for agent in agents
+        if agent.role_key
+    ]
+
+
+def _role_lookup(roles: list[dict]) -> dict[str, str]:
+    lookup = {}
+    for role in roles:
+        key = str(role.get("key", "")).strip()
+        if not key:
+            continue
+        for alias in (role.get("key"), role.get("name"), role.get("avatar")):
+            token = _role_token(alias or "")
+            if token:
+                lookup[token] = key
+    return lookup
+
+
+def _selected_role_error(invalid_roles: list[str]) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={
+            "error": "invalid_selected_roles",
+            "message": "Unknown Studio role selected.",
+            "invalid_roles": invalid_roles,
+        },
+    )
+
+
+def _normalize_selected_role_keys(
+    value,
+    roles: list[dict],
+    *,
+    reject_unknown: bool,
+    allowed_role_keys: Optional[set[str]] = None,
+) -> Optional[list[str]]:
     if not isinstance(value, list):
         return None
-    roles = [str(role).strip() for role in value if str(role).strip()]
-    return roles or None
+
+    lookup = _role_lookup(roles)
+    allowed = set(allowed_role_keys or [])
+    selected_keys = []
+    invalid_roles = []
+    for role in value:
+        raw = str(role).strip()
+        if not raw:
+            continue
+        key = lookup.get(_role_token(raw))
+        if not key or (allowed and key not in allowed):
+            invalid_roles.append(raw)
+            continue
+        if key not in selected_keys:
+            selected_keys.append(key)
+
+    if invalid_roles and reject_unknown:
+        raise _selected_role_error(invalid_roles)
+    return selected_keys or None
 
 
-def _safe_workspace_metadata(workspace_or_raw) -> dict:
+def _safe_workspace_metadata(
+    workspace_or_raw,
+    *,
+    roles: Optional[list[dict]] = None,
+    allowed_role_keys: Optional[set[str]] = None,
+) -> dict:
     """Parse Studio metadata and normalize legacy/malformed rows.
 
     Legacy workspaces may have NULL/blank/malformed metadata or missing setup
@@ -219,7 +295,12 @@ def _safe_workspace_metadata(workspace_or_raw) -> dict:
             setup.get("production_goal"),
             _STUDIO_SETUP_DEFAULTS["production_goal"],
         ),
-        "selected_roles": _metadata_roles(setup.get("selected_roles")),
+        "selected_roles": _normalize_selected_role_keys(
+            setup.get("selected_roles"),
+            roles or _known_studio_roles(),
+            reject_unknown=False,
+            allowed_role_keys=allowed_role_keys,
+        ),
     }
     metadata["setup"] = normalized_setup
     for key in _STUDIO_SETUP_DEFAULTS:
@@ -248,14 +329,14 @@ def _setup_context(metadata: Optional[dict]) -> str:
 
 def _roles_for_payload(preset: dict, payload: StudioWorkspaceCreate) -> list[dict]:
     roles = list(preset["roles"])
-    selected = payload.selected_roles or []
-    selected_keys = {str(key).strip() for key in selected if str(key).strip()}
+    selected_keys = _normalize_selected_role_keys(
+        payload.selected_roles,
+        roles,
+        reject_unknown=True,
+    )
     if not selected_keys:
         return roles
-    filtered = [role for role in roles if role["key"] in selected_keys]
-    if not filtered:
-        raise HTTPException(status_code=400, detail="Select at least one studio role")
-    return filtered
+    return [role for role in roles if role["key"] in selected_keys]
 
 
 def _role_personality(role: dict, workspace_name: str, idea: str, metadata: Optional[dict] = None) -> str:
@@ -628,7 +709,12 @@ def _workspace_to_dict(db, workspace: StudioWorkspace) -> dict:
             for c in db.query(CrewMember).filter(CrewMember.id.in_(crew_ids)).all()
         }
 
-    metadata = _safe_workspace_metadata(workspace)
+    active_role_keys = {agent.role_key for agent in agents if agent.status == "active"}
+    metadata = _safe_workspace_metadata(
+        workspace,
+        roles=_known_studio_roles() + _agent_roles(agents),
+        allowed_role_keys=active_role_keys,
+    )
 
     return {
         "id": workspace.id,
@@ -816,14 +902,16 @@ def setup_studio_workspace_routes() -> APIRouter:
         try:
             workspace = _load_owned_workspace(db, workspace_id, owner)
             owner_for_rows = workspace.owner
-            metadata = _safe_workspace_metadata(workspace)
-            active_role_keys = {
-                row.role_key
-                for row in db.query(StudioWorkspaceAgent).filter(
-                    StudioWorkspaceAgent.workspace_id == workspace.id,
-                    StudioWorkspaceAgent.status == "active",
-                ).all()
-            }
+            active_agents = db.query(StudioWorkspaceAgent).filter(
+                StudioWorkspaceAgent.workspace_id == workspace.id,
+                StudioWorkspaceAgent.status == "active",
+            ).all()
+            active_role_keys = {row.role_key for row in active_agents}
+            metadata = _safe_workspace_metadata(
+                workspace,
+                roles=_known_studio_roles() + _agent_roles(active_agents),
+                allowed_role_keys=active_role_keys,
+            )
 
             existing_kinds = {
                 row.kind

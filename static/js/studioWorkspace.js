@@ -81,7 +81,7 @@ function _roleOptions(presetKey = 'game_dev') {
   const roles = Array.isArray(preset.roles) ? preset.roles : [];
   if (!roles.length) return '<div class="studio-empty">Roles load after presets refresh.</div>';
   return roles.map((role) => `
-    <label class="studio-role-option">
+    <label class="studio-setup-role-card">
       <input type="checkbox" value="${_esc(role.key)}" checked />
       <span>
         <strong>${_esc(role.name)}</strong>
@@ -348,7 +348,7 @@ function _getSetupModal() {
   _setupModal.style.display = 'none';
   _setupModal.innerHTML = `
     <div class="modal-content studio-setup-content">
-      <div class="modal-header">
+      <div class="modal-header studio-setup-header">
         <h4>${_STUDIO_SVG} New Studio</h4>
         <button class="close-btn" id="studio-setup-close" aria-label="Close">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -412,9 +412,9 @@ function _getSetupModal() {
             <h5>Team Roles</h5>
             <button type="button" class="studio-link-btn" id="studio-select-all-roles">Select all</button>
           </div>
-          <div class="studio-role-options" id="studio-setup-roles">${_roleOptions('game_dev')}</div>
+          <div class="studio-setup-role-options" id="studio-setup-roles">${_roleOptions('game_dev')}</div>
         </section>
-        <div class="studio-setup-footer">
+        <div class="studio-setup-actions">
           <button type="button" class="confirm-btn confirm-btn-secondary" id="studio-setup-cancel">Cancel</button>
           <button type="submit" class="confirm-btn confirm-btn-primary" id="studio-setup-create">${_busy ? 'Creating...' : 'Create Studio'}</button>
         </div>
@@ -436,8 +436,8 @@ function _getSetupModal() {
   _setupModal.addEventListener('click', (event) => {
     if (event.target === _setupModal) closeStudioSetup();
   });
-  const content = _setupModal.querySelector('.modal-content');
-  const header = _setupModal.querySelector('.modal-header');
+  const content = _setupModal.querySelector('.studio-setup-content');
+  const header = _setupModal.querySelector('.studio-setup-header');
   if (content && header) makeWindowDraggable(_setupModal, { content, header });
   return _setupModal;
 }

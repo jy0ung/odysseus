@@ -629,6 +629,27 @@ class StudioWorkspaceWorkItem(TimestampMixin, Base):
     )
 
 
+class StudioAgentTurn(Base):
+    """Studio-only agent turn record for future proposals, critiques, decisions, and updates."""
+    __tablename__ = "studio_agent_turns"
+
+    id                  = Column(String, primary_key=True, index=True)
+    studio_workspace_id = Column(String, ForeignKey("studio_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    crew_member_id      = Column(String, ForeignKey("crew_members.id", ondelete="SET NULL"), nullable=True, index=True)
+    turn_type           = Column(String, nullable=False)
+    content             = Column(Text, nullable=False, default="")
+    structured_payload  = Column(Text, nullable=True)
+    created_at          = Column(DateTime, default=utcnow_naive, nullable=False)
+
+    workspace = relationship("StudioWorkspace", backref=backref("agent_turns", cascade="all, delete-orphan"))
+    crew_member = relationship("CrewMember", foreign_keys=[crew_member_id])
+
+    __table_args__ = (
+        Index('ix_studio_agent_turns_workspace_created', 'studio_workspace_id', 'created_at'),
+        Index('ix_studio_agent_turns_workspace_type', 'studio_workspace_id', 'turn_type'),
+    )
+
+
 class ScheduledTask(TimestampMixin, Base):
     """A recurring or one-off task — LLM-powered or direct action, time or event triggered."""
     __tablename__ = "scheduled_tasks"
