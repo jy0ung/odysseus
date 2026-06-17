@@ -144,8 +144,10 @@ def _clean_optional(value: Optional[str]) -> Optional[str]:
 
 
 def _metadata_from_payload(payload: StudioWorkspaceCreate, selected_role_keys: list[str]) -> dict:
+    platform = _clean_optional(payload.target_platform)
     setup = {
-        "target_platform": _clean_optional(payload.target_platform),
+        "platform": platform,
+        "target_platform": platform,
         "genre": _clean_optional(payload.genre),
         "tone": _clean_optional(payload.tone),
         "scope": _clean_optional(payload.scope),
@@ -158,18 +160,87 @@ def _metadata_from_payload(payload: StudioWorkspaceCreate, selected_role_keys: l
     }
 
 
+_STUDIO_SETUP_DEFAULTS = {
+    "platform": "unspecified",
+    "genre": "unspecified",
+    "tone": "balanced",
+    "scope": "prototype",
+    "production_goal": "",
+    "selected_roles": None,
+}
+
+
+def _metadata_text(value, default: str) -> str:
+    if value is None:
+        return default
+    cleaned = str(value).strip()
+    return cleaned or default
+
+
+def _metadata_roles(value) -> Optional[list[str]]:
+    if not isinstance(value, list):
+        return None
+    roles = [str(role).strip() for role in value if str(role).strip()]
+    return roles or None
+
+
+def _safe_workspace_metadata(workspace_or_raw) -> dict:
+    """Parse Studio metadata and normalize legacy/malformed rows.
+
+    Legacy workspaces may have NULL/blank/malformed metadata or missing setup
+    keys. Route handlers should use this helper rather than reading
+    StudioWorkspace.workspace_metadata directly so every path sees the same
+    defaults.
+    """
+    raw = getattr(workspace_or_raw, "workspace_metadata", workspace_or_raw)
+    if isinstance(raw, dict):
+        metadata = dict(raw)
+    else:
+        try:
+            metadata = json.loads(raw or "{}")
+            if not isinstance(metadata, dict):
+                metadata = {}
+        except Exception:
+            metadata = {}
+
+    setup_raw = metadata.get("setup")
+    setup = dict(setup_raw) if isinstance(setup_raw, dict) else {}
+    platform = _metadata_text(
+        setup.get("platform", setup.get("target_platform")),
+        _STUDIO_SETUP_DEFAULTS["platform"],
+    )
+    normalized_setup = {
+        "platform": platform,
+        "target_platform": platform,
+        "genre": _metadata_text(setup.get("genre"), _STUDIO_SETUP_DEFAULTS["genre"]),
+        "tone": _metadata_text(setup.get("tone"), _STUDIO_SETUP_DEFAULTS["tone"]),
+        "scope": _metadata_text(setup.get("scope"), _STUDIO_SETUP_DEFAULTS["scope"]),
+        "production_goal": _metadata_text(
+            setup.get("production_goal"),
+            _STUDIO_SETUP_DEFAULTS["production_goal"],
+        ),
+        "selected_roles": _metadata_roles(setup.get("selected_roles")),
+    }
+    metadata["setup"] = normalized_setup
+    for key in _STUDIO_SETUP_DEFAULTS:
+        metadata[key] = normalized_setup[key]
+    return metadata
+
+
 def _setup_context(metadata: Optional[dict]) -> str:
-    setup = (metadata or {}).get("setup") or {}
-    if not isinstance(setup, dict):
-        return ""
+    setup = _safe_workspace_metadata(metadata).get("setup", {})
     labels = [
-        ("target_platform", "Target platform"),
+        ("platform", "Target platform"),
         ("genre", "Genre"),
         ("tone", "Tone"),
         ("scope", "Scope"),
         ("production_goal", "Production goal"),
     ]
-    rows = [f"- {label}: {setup[key]}" for key, label in labels if setup.get(key)]
+    rows = [
+        f"- {label}: {setup[key]}"
+        for key, label in labels
+        if setup.get(key) and setup.get(key) != _STUDIO_SETUP_DEFAULTS.get(key)
+    ]
     if not rows:
         return ""
     return "\n\n## Studio Setup\n" + "\n".join(rows)
@@ -539,14 +610,6 @@ def _create_document(db, *, owner: Optional[str], title: str, content: str) -> D
     return doc
 
 
-def _parse_metadata(raw: Optional[str]) -> dict:
-    try:
-        parsed = json.loads(raw or "{}")
-        return parsed if isinstance(parsed, dict) else {}
-    except Exception:
-        return {}
-
-
 def _workspace_to_dict(db, workspace: StudioWorkspace) -> dict:
     agents = db.query(StudioWorkspaceAgent).filter(
         StudioWorkspaceAgent.workspace_id == workspace.id,
@@ -565,6 +628,8 @@ def _workspace_to_dict(db, workspace: StudioWorkspace) -> dict:
             for c in db.query(CrewMember).filter(CrewMember.id.in_(crew_ids)).all()
         }
 
+    metadata = _safe_workspace_metadata(workspace)
+
     return {
         "id": workspace.id,
         "owner": workspace.owner,
@@ -575,7 +640,7 @@ def _workspace_to_dict(db, workspace: StudioWorkspace) -> dict:
         "phase": workspace.phase,
         "summary": workspace.summary,
         "current_focus": workspace.current_focus,
-        "metadata": _parse_metadata(workspace.workspace_metadata),
+        "metadata": metadata,
         "created_at": _iso(workspace.created_at),
         "updated_at": _iso(workspace.updated_at),
         "team": [
@@ -751,7 +816,7 @@ def setup_studio_workspace_routes() -> APIRouter:
         try:
             workspace = _load_owned_workspace(db, workspace_id, owner)
             owner_for_rows = workspace.owner
-            metadata = _parse_metadata(workspace.workspace_metadata)
+            metadata = _safe_workspace_metadata(workspace)
             active_role_keys = {
                 row.role_key
                 for row in db.query(StudioWorkspaceAgent).filter(
